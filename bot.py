@@ -33,9 +33,9 @@ ADMINS = {OWNER_ID} | {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if 
 RARITY = {
     "common": ("⚪", 60),
     "epic": ("🔵", 25),
-    "legendary": ("🟡", 10),
-    "mifik": ("🟣", 4),
-    "ultimate": ("🔴", 1),
+    "legendary": ("🟠", 10),
+    "mifik": ("🔴", 4),
+    "ultimate": ("🟡", 1),
 }
 FREE_BOXES_PER_DAY = 3
 GIFTS_PER_DAY = 3
