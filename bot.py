@@ -31,8 +31,8 @@ ADMINS = {OWNER_ID} | {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if 
 
 # daraja: (belgi, tushish vazni) - vazn kichik bo'lsa, tushishi qiyin
 RARITY = {
-    "common": ("⚪", 60),
-    "epic": ("🔵", 25),
+    "common": ("🔵", 60),
+    "epic": ("🟣", 25),
     "legendary": ("🟠", 10),
     "mifik": ("🔴", 4),
     "ultimate": ("🟡", 1),
@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS market(id INTEGER PRIMARY KEY AUTOINCREMENT, seller I
 CREATE TABLE IF NOT EXISTS claimed(uid INTEGER, col_id INTEGER, PRIMARY KEY(uid, col_id));
 CREATE TABLE IF NOT EXISTS stickers(key TEXT PRIMARY KEY, file_id TEXT);
 CREATE TABLE IF NOT EXISTS game(id INTEGER PRIMARY KEY, aid INTEGER);
+CREATE TABLE IF NOT EXISTS chats(id INTEGER PRIMARY KEY, title TEXT DEFAULT '', kind TEXT DEFAULT 'group');
 """)
 
 
@@ -82,6 +83,9 @@ def ex(sql, *a):
 
 def is_owner(uid):
     return uid == OWNER_ID
+
+def is_admin(uid):
+    return uid in ADMINS
 
 
 def find_user(ref):
@@ -165,9 +169,10 @@ async def check_collections(uid):
 
 async def broadcast(fn):
     ok = 0
-    for r in q("SELECT id FROM users"):
+    targets = [r["id"] for r in q("SELECT id FROM users")] + [r["id"] for r in q("SELECT id FROM chats")]
+    for chat_id in dict.fromkeys(targets):
         try:
-            await fn(r["id"])
+            await fn(chat_id)
             ok += 1
         except Exception:
             pass
@@ -191,6 +196,11 @@ def nums(command, count):
 async def reg(handler, event, data):
     u = data.get("event_from_user")
     data["is_new"] = False
+    chat = data.get("event_chat")
+    if chat and chat.type in ("group", "supergroup"):
+        title = getattr(chat, "title", "") or ""
+        ex("INSERT INTO chats(id,title,kind) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title",
+           chat.id, title, chat.type)
     if u and not u.is_bot:
         data["is_new"] = q1("SELECT 1 FROM users WHERE id=?", u.id) is None
         ex("INSERT INTO users(id,username,name) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET "
@@ -211,7 +221,7 @@ HELP = """🎴 Aniwu kolleksiya botiga xush kelibsiz!
 🔄 /almashtir <mening> <uniki> <@user|id>
 🏪 /market, /sotish <raqam> <narx>, /olib_tashla <market id>
 ⬆️ /upgrade <mening> <maqsad>
-💎 /olmos <son> - 1000 💰 = 1 💎"""
+💎 /olmos <son> - 1000 💰 = 1 💎\n/olmos_pul <son> - 1 💎 = 1000 💰"""
 
 
 # ---------- foydalanuvchi buyruqlari ----------
@@ -244,6 +254,19 @@ async def profil(m: Message):
         f"🎴 Aniwular: {'∞' if own else cnt['n']} ({'hammasi' if own else str(cnt['k']) + ' xil'})\n"
         f"🎁 Tekin sandiq: {max(FREE_BOXES_PER_DAY - used, 0)} + {u['extra_boxes']} (bonus)\n"
         f"👥 Takliflar: {u['invites']}")
+
+
+@dp.message(Command("olmos_pul"))
+async def olmos_pul(m: Message, command: CommandObject):
+    n = nums(command, 1)
+    if not n or n[0] < 1:
+        return await m.answer(f"Foydalanish: /olmos_pul <son>\n1 💎 = {MONEY_PER_DIAMOND} 💰")
+    uid = m.from_user.id
+    if not has_bal(uid, "diamonds", n[0]):
+        return await m.answer("❌ Olmos yetarli emas.")
+    change_bal(uid, "diamonds", -n[0])
+    change_bal(uid, "money", n[0] * MONEY_PER_DIAMOND)
+    await m.answer(f"✅ {n[0]} 💎 olmos {n[0] * MONEY_PER_DIAMOND:,} 💰 pulga aylantirildi!")
 
 
 @dp.message(Command("olmos"))
@@ -504,15 +527,16 @@ async def upgrade_go(cb: CallbackQuery):
 MEMBER_ROWS = [["🎁 Sandiq ochish"], ["👤 Profil", "🎒 Aniwularim"], ["📚 To'plamlar", "🏪 Market"],
                ["⬆️ Upgrade", "🔄 Almashtirish"], ["💝 Sovga", "💎 Olmos"], ["👥 Do'st taklif qilish"]]
 ADMIN_ROWS = [["🛠 Admin panel", "➕ Aniwu qo'shish"], ["📢 Xabar yuborish", "🎮 O'yin boshlash"]]
-OWNER_ROWS = [["👑 Ega paneli", "📊 Statistika"]]
+OWNER_ROWS = [["👑 Ega paneli", "📊 Statistika"], ["➕ Admin qoʻshish", "➖ Admin olish"]]
+MARKET_ROWS = [["🏪 Aniwu market", "💱 Valyuta"], ["⬅️ Asosiy menyu"]]
 flat = lambda rows: {b for r in rows for b in r}
 ADMIN_BTNS, OWNER_BTNS = flat(ADMIN_ROWS), flat(OWNER_ROWS)
-ALL_BTNS = flat(MEMBER_ROWS) | ADMIN_BTNS | OWNER_BTNS
+ALL_BTNS = flat(MEMBER_ROWS) | ADMIN_BTNS | OWNER_BTNS | flat(MARKET_ROWS)
 HINTS = {
     "⬆️ Upgrade": "⬆️ /upgrade <mening raqamim> <maqsad raqami>\nOmad ehtimoli narxga bog'liq.",
     "🔄 Almashtirish": "🔄 /almashtir <mening raqamim> <uniki> <@user|id>",
     "💝 Sovga": f"💝 /sovga <aniwu raqami> <@user|id>\nKuniga {GIFTS_PER_DAY} ta.",
-    "💎 Olmos": f"💎 /olmos <son>\n{MONEY_PER_DIAMOND} 💰 = 1 💎",
+    "💎 Olmos": f"💎 /olmos <son>\n{MONEY_PER_DIAMOND} 💰 = 1 💎\nOlmosni pulga: /olmos_pul <son>",
     "➕ Aniwu qo'shish": "1) /toplam_qosh Naruto | 50\n2) Rasm yuboring, izohiga:\n/add 1 | 101 | Naruto | epic | 5000",
     "📢 Xabar yuborish": "📢 /xabar <matn>\nyoki istalgan xabarga reply qilib /xabar",
     "🎮 O'yin boshlash": "🎮 /oyin <aniwu raqami>",
@@ -523,6 +547,7 @@ def menu(uid):
     rows = [[KeyboardButton(text="📱 Ilova", web_app=WebAppInfo(url=WEBAPP_URL))]] if WEBAPP_URL else []
     extra = (ADMIN_ROWS if uid in ADMINS else []) + (OWNER_ROWS if is_owner(uid) else [])
     rows += [[KeyboardButton(text=b) for b in r] for r in MEMBER_ROWS + extra]
+    rows += [[KeyboardButton(text="🧭 Boʻlimlar")]]
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
@@ -549,7 +574,18 @@ async def on_menu(m: Message):
     if t == "📚 To'plamlar":
         return await toplamlar(m)
     if t == "🏪 Market":
+        return await m.answer("🏪 Market bo‘limi", reply_markup=ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text=b) for b in r] for r in MARKET_ROWS], resize_keyboard=True))
+    if t == "🏪 Aniwu market":
         return await market(m, CommandObject())
+    if t == "💱 Valyuta":
+        return await m.answer(f"💱 Valyuta ayirboshlash\nPul → olmos: /olmos <son> ( {MONEY_PER_DIAMOND} 💰 = 1 💎 )\nOlmos → pul: /olmos_pul <son>")
+    if t == "⬅️ Asosiy menyu" or t == "🧭 Boʻlimlar":
+        return await m.answer("📋 Asosiy menyu", reply_markup=menu(uid))
+    if t == "➕ Admin qoʻshish":
+        return await m.answer("Foydalanish: /admin_qosh <Telegram ID>")
+    if t == "➖ Admin olish":
+        return await m.answer("Foydalanish: /admin_ol <Telegram ID>")
     if t == "👥 Do'st taklif qilish":
         me = await bot.me()
         return await m.answer(f"👥 {INVITES_PER_BOX} ta do'st = 1 tekin sandiq\nHavolangiz:\n"
@@ -563,6 +599,30 @@ async def on_menu(m: Message):
         return await m.answer(f"📊 Statistika\n👥 A'zolar: {s['users']}\n🎴 Aniwular: {s['aniwus']}\n"
                               f"📚 To'plamlar: {s['collections']}\n🏪 Marketda: {s['market']}")
     await m.answer(HINTS[t])
+
+
+@dp.message(Command("admin_qosh"))
+async def add_admin(m: Message, command: CommandObject):
+    if not is_owner(m.from_user.id):
+        return await m.answer("❌ Faqat bot egasi admin qo‘sha oladi.")
+    a = nums(command, 1)
+    if not a:
+        return await m.answer("Foydalanish: /admin_qosh <Telegram ID>")
+    ADMINS.add(a[0])
+    await m.answer(f"✅ {a[0]} adminlar ro‘yxatiga qo‘shildi. Botni qayta ishga tushirganda saqlanishi uchun ADMIN_IDS muhit o‘zgaruvchisiga ham kiriting.")
+
+
+@dp.message(Command("admin_ol"))
+async def remove_admin(m: Message, command: CommandObject):
+    if not is_owner(m.from_user.id):
+        return await m.answer("❌ Faqat bot egasi admin huquqini olib tashlay oladi.")
+    a = nums(command, 1)
+    if not a:
+        return await m.answer("Foydalanish: /admin_ol <Telegram ID>")
+    if a[0] == OWNER_ID:
+        return await m.answer("❌ Egani adminlar ro‘yxatidan olib bo‘lmaydi.")
+    ADMINS.discard(a[0])
+    await m.answer(f"✅ {a[0]} adminlar ro‘yxatidan olindi. Botni qayta ishga tushirganda saqlanishi uchun ADMIN_IDS ni ham yangilang.")
 
 
 # ---------- o'yin: birinchi topgan yutadi ----------
@@ -593,7 +653,7 @@ Rasm + izoh: /add <toplam id> | <raqam> | <nom> | <daraja> | <narx>
 /hammaga pul|olmos|aniwu <son|raqam>
 /xabar <matn> (yoki xabarga reply qilib /xabar)
 /oyin <aniwu raqami> - rasm yuboriladi, birinchi topgan yutadi
-/stiker <kalit> (stikerga reply): sandiq, ultimate, toplam, yutuq"""
+/stiker <kalit> (stikerga reply): sandiq, ultimate, toplam, yutuq\n/admin_qosh <Telegram ID> (faqat ega)\n/admin_ol <Telegram ID> (faqat ega)"""
 
 
 def admin_only(m: Message):
@@ -782,6 +842,29 @@ async def api_buy(uid, body):
     return {"ok": ok, "msg": msg}
 
 
+async def api_exchange(uid, body):
+    kind = body.get("kind")
+    try:
+        amount = int(body.get("amount", 0))
+    except (TypeError, ValueError):
+        amount = 0
+    if amount < 1:
+        return {"error": "1 yoki undan katta son kiriting."}
+    if kind == "olmos":
+        if not has_bal(uid, "money", amount * MONEY_PER_DIAMOND):
+            return {"error": "Pul yetarli emas."}
+        change_bal(uid, "money", -amount * MONEY_PER_DIAMOND)
+        change_bal(uid, "diamonds", amount)
+        return {"msg": f"{amount} 💎 olmos oldingiz!"}
+    if kind == "olmos_pul":
+        if not has_bal(uid, "diamonds", amount):
+            return {"error": "Olmos yetarli emas."}
+        change_bal(uid, "diamonds", -amount)
+        change_bal(uid, "money", amount * MONEY_PER_DIAMOND)
+        return {"msg": f"{amount * MONEY_PER_DIAMOND:,} 💰 pul oldingiz!"}
+    return {"error": "Ayirboshlash turi noto‘g‘ri."}
+
+
 async def photo(req):
     a = get_aniwu(int(req.match_info["aid"]))
     if not a:
@@ -802,7 +885,7 @@ async def main():
         app = web.Application()
         app.add_routes([web.get("/", index), web.get("/photo/{aid}", photo),
                         web.post("/api/me", api(api_me)), web.post("/api/open", api(api_open)),
-                        web.post("/api/buy", api(api_buy))])
+                        web.post("/api/buy", api(api_buy)), web.post("/api/exchange", api(api_exchange))])
         runner = web.AppRunner(app)
         await runner.setup()
         await web.TCPSite(runner, "0.0.0.0", PORT).start()

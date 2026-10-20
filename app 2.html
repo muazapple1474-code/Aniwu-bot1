@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Aniwu</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root{--bg:var(--tg-theme-bg-color,#fff);--tx:var(--tg-theme-text-color,#111);--hint:var(--tg-theme-hint-color,#8a8a8e);
+--card:var(--tg-theme-secondary-bg-color,#f1f1f4);--btn:var(--tg-theme-button-color,#2f80ed);--btx:var(--tg-theme-button-text-color,#fff)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px system-ui,sans-serif;padding:12px 12px calc(76px + env(safe-area-inset-bottom,0px))}
+h3{margin:18px 0 8px;font-size:16px}h3 small,small{color:var(--hint);font-weight:400}
+.card{background:var(--card);border-radius:14px;padding:14px;margin-bottom:12px}.c{text-align:center}
+.row{display:flex;justify-content:space-between;align-items:center;margin:4px 0}
+.badge{background:var(--btn);color:var(--btx);border-radius:10px;padding:2px 10px;font-size:12px}
+.big{font-size:54px}.hint{color:var(--hint)}
+button{background:var(--btn);color:var(--btx);border:0;border-radius:12px;padding:12px 18px;font-size:15px;font-weight:600;width:100%}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.it{background:var(--card);border-radius:12px;padding:8px;display:flex;flex-direction:column;gap:4px;border:2px solid transparent}
+.it img{width:100%;aspect-ratio:3/4;object-fit:cover;border-radius:8px;background:#0002}
+.r-common{border-color:#3b82f6}.r-epic{border-color:#a855f7}.r-legendary{border-color:#f97316}.r-mifik{border-color:#ef4444}.r-ultimate{border-color:#eab308}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--bg);border-top:1px solid #8884;padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px))}
+nav a{flex:1;text-align:center;font-size:11px;color:var(--hint);padding:4px 0}nav a b{display:block;font-size:20px;font-weight:400}
+nav a.on{color:var(--btn)}
+</style>
+</head>
+<body>
+<div id="app"><p class="hint c">Yuklanmoqda…</p></div>
+<nav id="nav"></nav>
+<script>
+const tg = Telegram.WebApp; tg.ready(); tg.expand();
+const E = {common:"🔵", epic:"🟣", legendary:"🟠", mifik:"🔴", ultimate:"🟡"};
+const ROLE = {owner:"👑 Ega", admin:"🛠 Admin", member:"👤 A’zo"};
+let D, tab = "home";
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const n = v => v === null ? "∞" : Number(v).toLocaleString("uz");
+async function api(p, b = {}) {
+  try {
+    const r = await fetch("/api/" + p, {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({...b, initData: tg.initData})});
+    return await r.json();
+  } catch (e) { return {error: "Tarmoq xatosi"}; }
+}
+const item = (a, extra = "") => `<div class="it r-${a.rarity}"><img src="/photo/${a.id}" loading="lazy" alt="">
+  <b>${E[a.rarity]} ${esc(a.name)}</b><small>#${a.id} · ${n(a.price)} 💰</small>${extra}</div>`;
+
+const V = {
+  home: () => `<div class="card"><div class="row"><b>${esc(D.name)}</b><span class="badge">${ROLE[D.role]}</span></div>
+    <div class="row"><span>💰 ${n(D.money)}</span><span>💎 ${n(D.diamonds)}</span></div></div>
+    <div class="card c"><div class="big">🎁</div>
+    <p>${D.role === "owner" ? "Cheksiz sandiq" : D.free > 0 ? `Tekin sandiq: ${D.free} ta` : `Sandiq narxi: ${n(D.price)} 💰`}</p>
+    <button onclick="openBox()">Sandiq ochish</button></div><div id="res"></div>`,
+  inv: () => `<h3>🎒 Aniwularim</h3><div class="grid">${D.inv.map(a =>
+    item(a, `<small>x${a.qty === null ? "∞" : a.qty}</small>`)).join("") || '<p class="hint">Hali Aniwu yo’q. Sandiq oching!</p>'}</div>`,
+  cols: () => D.cols.map(c => `<h3>📚 ${esc(c.name)} <small>${c.have}/${c.items.length} · mukofot ${c.reward} 💎</small></h3>
+    <div class="grid">${c.items.map(a => `<div style="opacity:${a.own ? 1 : .35}">${item(a)}</div>`).join("")}</div>`).join("")
+    || '<p class="hint c">To’plam yo’q</p>',
+  market: () => `<h3>🏪 Market</h3><div class="grid">
+    <button onclick="go('marketlist')">🎴 Aniwu market</button>
+    <button onclick="go('moneydiamond')">💰 Pul → olmos</button>
+    <button onclick="go('diamondmoney')">💎 Olmos → pul</button>
+    </div>`,
+  marketlist: () => `<h3>🏪 Aniwu market</h3><button onclick="go('market')">⬅️ Market bo‘limi</button><div class="grid">${D.market.map(m => item({...m, price: m.base},
+    m.mine ? "<small>Sizning e’loningiz</small>" : `<button onclick="buy(${m.mid})">🛒 ${n(m.price)} 💰</button>`)).join("")
+    || '<p class="hint">Market bo’sh</p>'}</div>`,
+  moneydiamond: () => `<div class="card"><h3>💰 Pul → olmos</h3><p>1000 💰 = 1 💎</p><input id="exchangeAmount" type="number" min="1" placeholder="Olmos soni"><button onclick="exchange('olmos')">Ayirboshlash</button><button style="margin-top:8px" onclick="go('market')">⬅️ Orqaga</button></div>`,
+  diamondmoney: () => `<div class="card"><h3>💎 Olmos → pul</h3><p>1 💎 = 1000 💰</p><input id="exchangeAmount" type="number" min="1" placeholder="Olmos soni"><button onclick="exchange('olmos_pul')">Ayirboshlash</button><button style="margin-top:8px" onclick="go('market')">⬅️ Orqaga</button></div>`,
+  admin: () => {
+    const s = D.stats;
+    return `<div class="card"><h3 style="margin-top:0">${ROLE[D.role]} paneli</h3>
+      <div class="row"><span>👥 A’zolar</span><b>${s.users}</b></div><div class="row"><span>🎴 Aniwular</span><b>${s.aniwus}</b></div>
+      <div class="row"><span>📚 To’plamlar</span><b>${s.collections}</b></div><div class="row"><span>🏪 Marketda</span><b>${s.market}</b></div></div>
+      <div class="card"><p>Aniwu/to’plam qo’shish, xabar, sovg’a va o’yinlar bot chatida: <b>/admin</b></p>
+      ${D.role === "owner" ? "<p>👑 Siz egasiz: pul, olmos va barcha Aniwular cheksiz.</p>" : ""}
+      <button onclick="tg.close()">Botga qaytish</button></div>`;
+  }
+};
+
+function render() {
+  const tabs = [["home","🏠","Bosh"],["inv","🎒","Aniwular"],["cols","📚","To’plam"],["market","🏪","Market"]];
+  if (D.role !== "member") tabs.push(["admin", D.role === "owner" ? "👑" : "🛠", D.role === "owner" ? "Ega" : "Admin"]);
+  document.getElementById("nav").innerHTML = tabs.map(t =>
+    `<a class="${t[0] === tab ? "on" : ""}" onclick="go('${t[0]}')"><b>${t[1]}</b>${t[2]}</a>`).join("");
+  document.getElementById("app").innerHTML = V[tab]();
+}
+function go(t) { tab = t; render(); window.scrollTo(0, 0); }
+async function load() {
+  const r = await api("me");
+  if (r.error) { document.getElementById("app").innerHTML = `<p class="c">${esc(r.error)}</p>`; return false; }
+  D = r; render(); return true;
+}
+async function openBox() {
+  const r = await api("open");
+  if (r.error) return tg.showAlert(r.error);
+  tg.HapticFeedback && tg.HapticFeedback.notificationOccurred("success");
+  await load();
+  document.getElementById("res").innerHTML = `<div class="card c"><p>${esc(r.note)}</p><h3>Tushdi!</h3>${item(r.aniwu)}</div>`;
+}
+async function buy(mid) {
+  const r = await api("buy", {mid});
+  tg.showAlert(r.msg || r.error);
+  load();
+}
+async function exchange(kind) {
+  const amount = Number(document.getElementById("exchangeAmount")?.value || 0);
+  if (!Number.isInteger(amount) || amount < 1) return tg.showAlert("1 yoki undan katta son kiriting.");
+  const r = await api("exchange", {kind, amount});
+  if (r.error) return tg.showAlert(r.error);
+  tg.showAlert(r.msg || "Bajarildi");
+  await load();
+  go("market");
+}
+load();
+</script>
+</body>
+</html>
