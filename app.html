@@ -30,7 +30,7 @@ nav a.on{color:var(--btn)}
 <nav id="nav"></nav>
 <script>
 const tg = Telegram.WebApp; tg.ready(); tg.expand();
-const E = {common:"⚪", epic:"🔵", legendary:"🟡", mifik:"🟣", ultimate:"🔴"};
+const E = {common:"🔵", epic:"🟣", legendary:"🟠", mifik:"🔴", ultimate:"🟡"};
 const ROLE = {owner:"👑 Ega", admin:"🛠 Admin", member:"👤 A’zo"};
 let D, tab = "home";
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -49,7 +49,7 @@ const V = {
   home: () => `<div class="card"><div class="row"><b>${esc(D.name)}</b><span class="badge">${ROLE[D.role]}</span></div>
     <div class="row"><span>💰 ${n(D.money)}</span><span>💎 ${n(D.diamonds)}</span></div></div>
     <div class="card c"><div class="big">🎁</div>
-    <p>${D.role === "owner" ? "Cheksiz sandiq" : D.free > 0 ? `Tekin sandiq: ${D.free} ta` : `Sandiq narxi: ${n(D.price)} 💰`}</p>
+    <p>${D.role === "owner" ? "Cheksiz sandiq" : D.free > 0 ? `Kunlik tekin sandiq: ${D.free} ta` : `Sandiq narxi: ${n(D.price)} 💰`}</p>
     <button onclick="openBox()">Sandiq ochish</button></div><div id="res"></div>`,
   inv: () => `<h3>🎒 Aniwularim</h3><div class="grid">${D.inv.map(a =>
     item(a, `<small>x${a.qty === null ? "∞" : a.qty}</small>`)).join("") || '<p class="hint">Hali Aniwu yo’q. Sandiq oching!</p>'}</div>`,
